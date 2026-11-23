@@ -1,0 +1,9 @@
+# 忽略 VS Code 工作区配置
+.vscode/
+
+# linux/namespace 下只保留 Markdown 文档与 C 源码，其余文件一律不提交
+/linux/namespace/**
+!/linux/namespace/
+!/linux/namespace/**/
+!/linux/namespace/**/*.md
+!/linux/namespace/**/*.c
