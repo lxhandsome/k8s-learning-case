@@ -21,6 +21,65 @@ Mount namespace 隔离的是**挂载表**（mount table）：每个 namespace �
 - 文件系统本身没有被复制，隔离的只是"挂载关系"；同一块磁盘可以被多个 namespace 以不同方式挂载
 - 容器的 rootfs（overlayfs）、`/proc`、`/sys`、`/dev/shm` 以及各类 volume 都建立在此机制之上
 
+### Linux 文件系统与挂载基础
+
+理解 mount namespace 之前，先分清几个概念：
+
+```text
+块设备 /dev/sdX
+  └── 文件系统 ext4（由 mkfs.ext4 创建）
+        └── 根目录 /
+              └── from_container.txt
+```
+
+| 概念 | 说明 |
+|------|------|
+| 块设备 | 提供原始存储的设备，如 `/dev/sdb1`、LVM 卷、loop 设备。它本身只是扇区集合，未格式化前不能直接存文件 |
+| 文件系统 | 块设备上的数据结构（ext4、xfs、btrfs 等），负责目录、文件和空闲空间管理，由 `mkfs` 创建 |
+| 挂载点 | 目录树中的一个目录，作为访问文件系统的入口 |
+| 挂载 | 把文件系统根目录接到挂载点上的操作，通过 `mount(2)` 或 `mount(8)` 完成 |
+| mount namespace | 每个 namespace 一张独立挂载表，决定该 namespace 内路径如何解析 |
+
+几个关键点：
+
+- Linux 的所有文件系统组合成**一棵统一的目录树**，`mount` 是把另一棵树接到某个目录上
+- **mount 不是复制**：它只是引用一个已经存在的文件系统实例（superblock）
+- 挂载后，挂载点原来的目录内容会被**覆盖**（在当前 namespace 中不可见）；其他 namespace 不受影响
+- 同一个文件系统可以被多个挂载点、多个 namespace 同时引用，对数据的修改是共享的
+- **卸载不是删除**：`umount` 只是断开引用；数据仍然在后备存储上。tmpfs 是例外，最后一个引用消失后内存数据释放
+- 容器不是虚拟机：容器共享宿主机内核，容器内写块设备就是写宿主机的同一个块设备
+
+用"父进程创建 `/a/b`，子进程把设备挂载到 `/a/b`"的场景走一遍：
+
+```bash
+mkdir -p /a/b              # 在宿主机根文件系统上创建普通目录
+mount /dev/sdX /a/b        # 在子进程的 mount namespace 中挂载 sdX 上的 ext4
+echo hi > /a/b/file.txt    # 数据写入 sdX 上的 ext4 文件系统
+```
+
+此时：
+
+```text
+父进程（宿主机 namespace）：
+  /a/b  →  宿主机根文件系统上的原目录（空）
+
+子进程（容器 namespace）：
+  /a/b  →  /dev/sdX 上的 ext4 根目录  →  file.txt
+```
+
+父进程通过 `/a/b` 看到的是原来的空目录，因为它的挂载表里没有这次挂载；文件实际在 `/dev/sdX` 上。父进程要看到它，需要在宿主机上再挂载一次该设备：
+
+```bash
+mount /dev/sdX /mnt/container_disk
+ls /mnt/container_disk     # file.txt
+```
+
+如果宿主机之前已经把 `/dev/sdX` 挂在 `/data`，那么通过 `/data` 可以看到容器写入的文件（同一个 superblock）；namespace 只改变路径解析，不复制数据。
+
+> 一个直观实验：先在宿主机 `/a/b` 里放一个 `host.txt`，再在子进程里挂载设备。容器内看不到 `host.txt`（被设备内容覆盖），宿主机看不到设备里的 `file.txt`；容器退出、挂载消失后，`/a/b` 又变回原来的目录。这证明挂载是"覆盖"而不是"删除"。
+
+> 一句话：**数据放在哪里由后备存储决定，能不能看到由 mount namespace 的挂载表决定。**
+
 ### 挂载传播（mount propagation）
 
 这是 mount namespace 最容易踩坑的地方：
