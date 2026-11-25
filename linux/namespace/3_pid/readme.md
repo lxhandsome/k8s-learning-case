@@ -2,7 +2,7 @@
 
 > 本节代码：[main.c](./main.c)
 > 上一节：[2. IPC Namespace](../2_ipc/readme.md)
-> 下一节：Mount namespace（待完成）
+> 下一节：[4. Mount Namespace](../4_mount/readme.md)
 
 ## 实验目标
 
@@ -26,7 +26,7 @@ PID namespace 隔离的是**进程号的编号空间**，而不是进程本身�
 
 ## 代码解读
 
-`main.c` 与 IPC 实验结构相同，关键是 clone 的 flag 增加了 `CLONE_NEWPID`：
+`main.c` 与 IPC 实验结构相同，关键是 clone 的 flag 增加了 `CLONE_NEWPID`：        
 
 ```c
 int container_pid = clone(container_main, container_stack+STACK_SIZE,
@@ -178,4 +178,4 @@ ps -ef           # 只能看到 bash、ps 等少数进程
 
 ## 下一节
 
-Mount namespace（`CLONE_NEWNS`）：隔离文件系统挂载点，并重新挂载 `/proc`，让 `ps` 也看到隔离后的进程视图。
+[4. Mount Namespace](../4_mount/readme.md)：隔离文件系统挂载点，并重新挂载 `/proc`，让 `ps` 也看到隔离后的进程视图。
